@@ -10,6 +10,13 @@ import torch
 import torch.nn as nn
 import torchvision
 from torchvision import transforms
+from torch.utils.data import Dataset
+
+import sys
+sys.path.append('/content/drive/MyDrive/Colab Notebooks/Deep Learninng 基礎講座/DL基礎　コンペ/VQA/dl_lecture_competition_pub/src')
+
+from utils import preprocess_question, get_train_transform, get_test_transform
+
 
 
 def set_seed(seed):
@@ -68,6 +75,9 @@ class VQADataset(torch.utils.data.Dataset):
         self.image_dir = image_dir  # 画像ファイルのディレクトリ
         self.df = pandas.read_json(df_path)  # 画像ファイルのパス，question, answerを持つDataFrame
         self.answer = answer
+
+        # 質問文に前処理を適用
+        self.df['question'] = self.df['question'].apply(preprocess_question)
 
         # question / answerの辞書を作成
         self.question2idx = {}
@@ -291,11 +301,15 @@ class VQAModel(nn.Module):
     def __init__(self, vocab_size: int, n_answer: int):
         super().__init__()
         self.resnet = ResNet18()
-        self.text_encoder = nn.Linear(vocab_size, 512)
+        self.text_encoder = nn.Sequential(
+            nn.Linear(vocab_size, 512),
+            nn.BatchNorm1d(512)  # バッチ正規化を追加
+        )
 
         self.fc = nn.Sequential(
             nn.Linear(1024, 512),
             nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),  # ドロップアウトを追加
             nn.Linear(512, n_answer)
         )
 
@@ -368,8 +382,13 @@ def main():
         transforms.Resize((224, 224)),
         transforms.ToTensor()
     ])
-    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform)
-    test_dataset = VQADataset(df_path="./data/valid.json", image_dir="./data/valid", transform=transform, answer=False)
+    # dataloader / model
+    train_transform = get_train_transform()
+    test_transform = get_test_transform()
+
+    train_dataset = VQADataset(df_path="/content/data/train.json", image_dir="/content/data/train", transform=train_transform)
+    test_dataset = VQADataset(df_path="/content/data/valid.json", image_dir="/content/data/valid", transform=test_transform, answer=False)
+
     test_dataset.update_dict(train_dataset)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
